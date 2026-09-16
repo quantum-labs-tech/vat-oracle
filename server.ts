@@ -1,3 +1,6 @@
+import { verifyMessage } from "viem";
+
+// Configuration constants for the x402 payment protocol and Base L2 network
 const RECIPIENT_ADDRESS = "0x8a07325f802523BC245b4A3278CdBb0eF492a14E";
 const BASE_USDC_CONTRACT = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
 
@@ -11,19 +14,21 @@ Bun.serve({
       const country = url.searchParams.get("country");
       const vatNumber = url.searchParams.get("vat_number");
       const paymentSignature = req.headers.get("x-payment-signature");
+      const paymentWallet = req.headers.get("x-payment-wallet");
 
-      // 1. If payment signature is missing, return HTTP 402
-      if (!paymentSignature) {
-        const x402Spec = {
-          version: "1.0",
-          network: "eip155:8453", // Base Mainnet
-          asset: BASE_USDC_CONTRACT,
-          recipient: RECIPIENT_ADDRESS,
-          amount: "0.02",
-          currency: "USDC",
-          description: `EU VAT validation for ${country || ''}${vatNumber || ''}`
-        };
+      // Define x402 payment specification payload
+      const x402Spec = {
+        version: "1.0",
+        network: "eip155:8453", // Base Mainnet
+        asset: BASE_USDC_CONTRACT,
+        recipient: RECIPIENT_ADDRESS,
+        amount: "0.02",
+        currency: "USDC",
+        description: `EU VAT validation for ${country || ''}${vatNumber || ''}`
+      };
 
+      // 1. If payment signature or wallet is missing, return HTTP 402 Payment Required
+      if (!paymentSignature || !paymentWallet) {
         return new Response(null, {
           status: 402,
           headers: {
@@ -34,7 +39,31 @@ Bun.serve({
         });
       }
 
-      // 2. Business logic: VIES check upon payment signature verification
+      try {
+        // 2. Cryptographic verification of the x402 payment signature
+        const messageToVerify = JSON.stringify(x402Spec);
+        const isValidSignature = await verifyMessage({
+          address: paymentWallet as `0x${string}`,
+          message: messageToVerify,
+          signature: paymentSignature as `0x${string}`,
+        });
+
+        // Reject request if signature is invalid or forged
+        if (!isValidSignature) {
+          return new Response(JSON.stringify({ error: "Invalid payment cryptographic signature" }), { 
+            status: 401,
+            headers: { "Content-Type": "application/json" }
+          });
+        }
+      } catch (err) {
+        // Handle malformed signatures or unexpected verification errors
+        return new Response(JSON.stringify({ error: "Signature verification failed" }), { 
+          status: 400,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+
+      // 3. Business logic: VIES check executed only after successful cryptographic verification
       if (!country || !vatNumber) {
         return new Response(JSON.stringify({ error: "Missing country or vat_number" }), { status: 400 });
       }
@@ -60,6 +89,7 @@ Bun.serve({
       }
     }
 
+    // Fallback for any other routes
     return new Response("Not Found", { status: 404 });
   }
 });
