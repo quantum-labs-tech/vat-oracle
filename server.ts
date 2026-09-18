@@ -1,8 +1,13 @@
 import { createPublicClient, http, decodeFunctionData } from "viem";
 import { base } from "viem/chains";
 
-// Configuration constants for the x402 payment protocol and Base L2 network
-const RECIPIENT_ADDRESS = "0x8a07325f802523BC245b4A3278CdBb0eF492a14E";
+// Fetch recipient wallet address from environment variables
+const RECIPIENT_ADDRESS = process.env.RECIPIENT_ADDRESS;
+if (!RECIPIENT_ADDRESS) {
+  throw new Error("RECIPIENT_ADDRESS environment variable is missing.");
+}
+
+// Fixed contract address for USDC on Base L2 Mainnet
 const BASE_USDC_CONTRACT = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
 
 // Minimal ERC-20 ABI to decode transfer function calls
@@ -112,7 +117,7 @@ Bun.serve({
 
         const [recipient, amount] = args;
 
-        // Verify recipient address matches our expected recipient
+        // Verify recipient address matches our expected recipient from env
         if (recipient.toLowerCase() !== RECIPIENT_ADDRESS.toLowerCase()) {
           return new Response(
             JSON.stringify({ error: "Transaction recipient address mismatch" }),
