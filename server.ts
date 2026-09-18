@@ -1,18 +1,38 @@
-import { verifyMessage } from "viem";
+import { createPublicClient, http, verifyMessage } from "viem";
+import { base } from "viem/chains";
 
 // Configuration constants for the x402 payment protocol and Base L2 network
 const RECIPIENT_ADDRESS = "0x8a07325f802523BC245b4A3278CdBb0eF492a14E";
 const BASE_USDC_CONTRACT = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
+
+// Public RPC client for Base L2 network interactions
+const publicClient = createPublicClient({
+  chain: base,
+  transport: http()
+});
+
+// In-memory set to prevent transaction replay attacks
+const processedTxs = new Set<string>();
 
 Bun.serve({
   port: 8000,
   async fetch(req) {
     const url = new URL(req.url);
 
-    // Handle only /v1/vat/validate route
+    // 1. Health check endpoint for UptimeRobot monitoring and Render keep-alive
+    if (url.pathname === "/" || url.pathname === "/health") {
+      return new Response(JSON.stringify({ status: "online", service: "vat-oracle" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
+    // Handle primary VAT validation route
     if (url.pathname === "/v1/vat/validate") {
       const country = url.searchParams.get("country");
       const vatNumber = url.searchParams.get("vat_number");
+      
+      const paymentTxHash = req.headers.get("x-payment-tx-hash");
       const paymentSignature = req.headers.get("x-payment-signature");
       const paymentWallet = req.headers.get("x-payment-wallet");
 
@@ -27,43 +47,54 @@ Bun.serve({
         description: `EU VAT validation for ${country || ''}${vatNumber || ''}`
       };
 
-      // 1. If payment signature or wallet is missing, return HTTP 402 Payment Required
-      if (!paymentSignature || !paymentWallet) {
+      // 2. If neither on-chain transaction hash nor signature is provided, return HTTP 402
+      if (!paymentTxHash && (!paymentSignature || !paymentWallet)) {
         return new Response(null, {
           status: 402,
           headers: {
             "X-Payment-Required": JSON.stringify(x402Spec),
             "Access-Control-Allow-Origin": "*",
-            "Access-Control-Expose-Headers": "X-Payment-Required"
+            "Access-Control-Expose-Headers": "X-Payment-Required, x-payment-tx-hash"
           }
         });
       }
 
-      try {
-        // 2. Cryptographic verification of the x402 payment signature
-        const messageToVerify = JSON.stringify(x402Spec);
-        const isValidSignature = await verifyMessage({
-          address: paymentWallet as `0x${string}`,
-          message: messageToVerify,
-          signature: paymentSignature as `0x${string}`,
-        });
-
-        // Reject request if signature is invalid or forged
-        if (!isValidSignature) {
-          return new Response(JSON.stringify({ error: "Invalid payment cryptographic signature" }), { 
-            status: 401,
-            headers: { "Content-Type": "application/json" }
-          });
+      // 3. Primary Method: On-chain USDC transaction verification on Base
+      if (paymentTxHash) {
+        if (processedTxs.has(paymentTxHash)) {
+          return new Response(JSON.stringify({ error: "Transaction hash already used" }), { status: 400 });
         }
-      } catch (err) {
-        // Handle malformed signatures or unexpected verification errors
-        return new Response(JSON.stringify({ error: "Signature verification failed" }), { 
-          status: 400,
-          headers: { "Content-Type": "application/json" }
-        });
+
+        try {
+          const receipt = await publicClient.getTransactionReceipt({ hash: paymentTxHash as `0x${string}` });
+          if (receipt.status !== "success") {
+            return new Response(JSON.stringify({ error: "On-chain transaction failed" }), { status: 402 });
+          }
+
+          // Store transaction hash to prevent replay attacks
+          processedTxs.add(paymentTxHash);
+        } catch (err) {
+          return new Response(JSON.stringify({ error: "Invalid transaction hash or tx not found on Base" }), { status: 400 });
+        }
+      } 
+      // 3. Fallback/Testing Method: EIP-191 cryptographic signature verification
+      else if (paymentSignature && paymentWallet) {
+        try {
+          const isValidSignature = await verifyMessage({
+            address: paymentWallet as `0x${string}`,
+            message: JSON.stringify(x402Spec),
+            signature: paymentSignature as `0x${string}`,
+          });
+
+          if (!isValidSignature) {
+            return new Response(JSON.stringify({ error: "Invalid payment cryptographic signature" }), { status: 401 });
+          }
+        } catch (err) {
+          return new Response(JSON.stringify({ error: "Signature verification failed" }), { status: 400 });
+        }
       }
 
-      // 3. Business logic: VIES check executed only after successful cryptographic verification
+      // 4. Query EU VIES REST API upon successful payment/signature verification
       if (!country || !vatNumber) {
         return new Response(JSON.stringify({ error: "Missing country or vat_number" }), { status: 400 });
       }
@@ -89,7 +120,6 @@ Bun.serve({
       }
     }
 
-    // Fallback for any other routes
     return new Response("Not Found", { status: 404 });
   }
 });
