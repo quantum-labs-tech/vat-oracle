@@ -34,11 +34,18 @@ const publicClient = createPublicClient({
 const processedTxs = new Set<string>();
 
 Bun.serve({
-  port: 8000,
+  port: process.env.PORT || 8000,
   async fetch(req) {
     const url = new URL(req.url);
 
-    // 1. Health check endpoint for UptimeRobot monitoring and Render keep-alive
+    // 1. Static file serving from public/ directory for machine discovery (llms.txt, openapi.json, etc.)
+    const publicFilePath = `./public${url.pathname}`;
+    const file = Bun.file(publicFilePath);
+    if (await file.exists()) {
+      return new Response(file);
+    }
+
+    // 2. Health check endpoint for UptimeRobot monitoring and Render keep-alive
     if (url.pathname === "/" || url.pathname === "/health") {
       return new Response(JSON.stringify({ status: "online", service: "vat-oracle" }), {
         status: 200,
@@ -63,7 +70,7 @@ Bun.serve({
         description: `EU VAT validation for ${country || ""}${vatNumber || ""}`,
       };
 
-      // 2. If no on-chain transaction hash is provided, return HTTP 402 Payment Required
+      // 3. If no on-chain transaction hash is provided, return HTTP 402 Payment Required
       if (!paymentTxHash) {
         return new Response(null, {
           status: 402,
@@ -75,7 +82,7 @@ Bun.serve({
         });
       }
 
-      // 3. Strict verification: ensure the transaction hash hasn't been reused
+      // 4. Strict verification: ensure the transaction hash hasn't been reused
       if (processedTxs.has(paymentTxHash)) {
         return new Response(
           JSON.stringify({ error: "Transaction hash already used" }),
@@ -143,7 +150,7 @@ Bun.serve({
         );
       }
 
-      // 4. Query EU VIES REST API upon successful payment verification
+      // 5. Query EU VIES REST API upon successful payment verification
       if (!country || !vatNumber) {
         return new Response(
           JSON.stringify({ error: "Missing country or vat_number" }),
@@ -186,4 +193,4 @@ Bun.serve({
   },
 });
 
-console.log("Oracle running on http://localhost:8000");
+console.log("Oracle running on port " + (process.env.PORT || 8000));
