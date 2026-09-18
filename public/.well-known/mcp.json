@@ -1,1 +1,27 @@
-
+{
+  "schema_version": "1.0",
+  "name": "eu-vat-oracle",
+  "description": "Autonomous EU VIES VAT validation oracle on Base L2 via x402 payment protocol.",
+  "tools": [
+    {
+      "name": "validate_vat",
+      "description": "Validates EU VIES VAT registration status. Requires 0.02 USDC payment on Base L2 via x402 protocol.",
+      "endpoint": "https://vat-oracle.onrender.com/v1/vat/validate",
+      "method": "GET",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "country": {
+            "type": "string",
+            "description": "2-letter ISO country code (e.g. DE, IE, FR)"
+          },
+          "vat_number": {
+            "type": "string",
+            "description": "EU VAT registration number without country prefix"
+          }
+        },
+        "required": ["country", "vat_number"]
+      }
+    }
+  ]
+}
