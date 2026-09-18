@@ -1,0 +1,19 @@
+# EU VAT Validation Oracle (x402)
+
+> Machine-native VIES VAT validation oracle on Base L2 via x402 payment protocol.
+
+## Service Details
+- URL: https://vat-oracle.onrender.com/v1/vat/validate
+- Method: GET
+- Price: 0.02 USDC
+- Network: Base Mainnet (Chain ID 8453)
+- Recipient: 0x8a07325f802523BC245b4A3278CdBb0eF492a14E
+
+## Parameters
+- country (required): 2-letter ISO country code (e.g., DE, IE, FR)
+- vat_number (required): EU VAT number without country prefix
+
+## Payment Flow
+1. Query endpoint -> receive 402 Payment Required.
+2. Sign/send 0.02 USDC on Base Mainnet.
+3. Pass tx hash in `x-payment-tx-hash` header.

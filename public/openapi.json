@@ -1,0 +1,58 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "EU VAT Validation Oracle (x402)",
+    "version": "1.0.0",
+    "description": "Autonomous VIES VAT validation on Base L2 (0.02 USDC via x402)"
+  },
+  "servers": [
+    {
+      "url": "https://vat-oracle.onrender.com"
+    }
+  ],
+  "paths": {
+    "/v1/vat/validate": {
+      "get": {
+        "summary": "Validate EU VAT Number",
+        "description": "Validates EU VIES VAT registration status. Requires 0.02 USDC payment on Base L2 via x402 protocol.",
+        "parameters": [
+          {
+            "name": "country",
+            "in": "query",
+            "required": true,
+            "description": "2-letter ISO country code (e.g. DE, IE, FR)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "vat_number",
+            "in": "query",
+            "required": true,
+            "description": "EU VAT number without country prefix",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-payment-tx-hash",
+            "in": "header",
+            "required": false,
+            "description": "Transaction hash of 0.02 USDC payment on Base Mainnet",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "VAT Validated Successfully"
+          },
+          "402": {
+            "description": "Payment Required (0.02 USDC on Base L2 via x402)"
+          }
+        }
+      }
+    }
+  }
+}
